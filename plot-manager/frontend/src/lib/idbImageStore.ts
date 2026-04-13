@@ -48,12 +48,19 @@ export const uploadImageToMongo = async (dataUrl: string, contentType?: string):
 };
 
 const getMongoImageUrl = (ref: string): string => {
+  console.log('[getMongoImageUrl] Input ref:', ref?.substring(0, 30));
   const id = ref.startsWith('mongo:') ? ref.slice(6) : ref;
-  if (!id) return '';
+  console.log('[getMongoImageUrl] Extracted id:', id?.substring(0, 30));
+  if (!id) {
+    console.warn('[getMongoImageUrl] Empty id, returning empty string');
+    return '';
+  }
   
   // Always use fresh timestamp to prevent browser caching issues
   const timestamp = Date.now();
-  return apiUrl(`/api/images/${id}?t=${timestamp}`);
+  const url = apiUrl(`/api/images/${id}?t=${timestamp}`);
+  console.log('[getMongoImageUrl] Final URL:', url);
+  return url;
 };
 
 const openDb = () =>
