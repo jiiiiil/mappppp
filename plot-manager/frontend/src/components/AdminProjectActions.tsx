@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Settings, Edit2, Trash2, Upload, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { uploadImageToMongo } from '@/lib/idbImageStore';
 
 interface AdminProjectActionsProps {
   project: Project;
@@ -50,29 +51,18 @@ export default function AdminProjectActions({ project }: AdminProjectActionsProp
     return `${baseNoSlash}${pathWithSlash}`;
   };
 
-  const uploadImageToStorage = async (file: File, prefix: string) => {
-    const extRaw = file.name.split('.').pop() || '';
-    const ext = extRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    const token = user?.token;
-    const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
-
-    const presign = await fetch(apiUrl('/api/storage/presign-upload'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders },
-      body: JSON.stringify({ contentType: file.type, prefix, ext }),
+  const uploadImageToStorage = async (file: File) => {
+    // Convert file to base64 data URL
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => resolve(event.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
     });
-    if (!presign.ok) throw new Error('Could not prepare upload');
-    const presignJson = (await presign.json()) as { key?: string; url?: string };
-    if (!presignJson?.key || !presignJson?.url) throw new Error('Could not prepare upload');
 
-    const put = await fetch(presignJson.url, {
-      method: 'PUT',
-      headers: { 'Content-Type': file.type },
-      body: file,
-    });
-    if (!put.ok) throw new Error('Upload failed');
-    return `s3:${presignJson.key}`;
+    // Upload to MongoDB
+    const result = await uploadImageToMongo(dataUrl, file.type);
+    return `mongo:${result.id}`;
   };
 
   if (!isAdmin) return null;
@@ -119,7 +109,7 @@ export default function AdminProjectActions({ project }: AdminProjectActionsProp
 
     let ref = newLayoutImage;
     try {
-      ref = await uploadImageToStorage(newLayoutFile, 'project-layouts');
+      ref = await uploadImageToStorage(newLayoutFile);
     } catch {
       // S3 upload failed, use base64 data URL instead
     }

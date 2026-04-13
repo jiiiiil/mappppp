@@ -10,32 +10,38 @@ const apiUrl = (path: string) => {
   return `${baseNoSlash}${pathWithSlash}`;
 };
 
-const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
+// MongoDB image storage helpers
+const getAuthHeaders = () => {
+  const user = localStorage.getItem('realestate-user');
+  if (!user) return {};
+  const parsed = JSON.parse(user);
+  return parsed?.token ? { Authorization: `Bearer ${parsed.token}` } : {};
+};
 
-const getSignedUrlForS3Ref = async (ref: string) => {
-  const cached = signedUrlCache.get(ref);
-  if (cached && Date.now() < cached.expiresAt) return cached.url;
+export const uploadImageToMongo = async (dataUrl: string, contentType?: string): Promise<{ id: string; url: string }> => {
+  const res = await fetch(apiUrl('/api/images/upload'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ image: dataUrl, contentType: contentType || 'image/jpeg' }),
+  });
 
-  try {
-    const res = await fetch(
-      apiUrl(`/api/storage/signed-url?key=${encodeURIComponent(ref)}`)
-    );
-    if (!res.ok) {
-      console.warn('Failed to get signed URL, response not ok:', res.status, res.statusText);
-      throw new Error('Could not resolve image');
-    }
-    const data = (await res.json()) as { url?: string };
-    if (!data?.url) {
-      console.warn('No URL in signed URL response');
-      throw new Error('Could not resolve image');
-    }
-
-    signedUrlCache.set(ref, { url: data.url, expiresAt: Date.now() + 4 * 60 * 1000 });
-    return data.url;
-  } catch (error) {
-    console.error('Error getting signed URL for S3 reference:', ref, error);
-    throw error;
+  if (!res.ok) {
+    throw new Error(`Upload failed: ${res.status}`);
   }
+
+  return res.json();
+};
+
+const imageUrlCache = new Map<string, string>();
+
+const getMongoImageUrl = (ref: string): string => {
+  const id = ref.startsWith('mongo:') ? ref.slice(6) : ref;
+  const cached = imageUrlCache.get(id);
+  if (cached) return cached;
+  
+  const url = apiUrl(`/api/images/${id}`);
+  imageUrlCache.set(id, url);
+  return url;
 };
 
 const openDb = () =>
@@ -97,17 +103,19 @@ export const storeDataUrlImage = async (dataUrl: string, key: string) => {
 
 export const makeObjectUrlFromRef = async (ref: string) => {
   try {
-    if (ref.startsWith('s3:')) {
-      try {
-        return await getSignedUrlForS3Ref(ref);
-      } catch (s3Error) {
-        console.warn('S3 URL resolution failed, using fallback:', s3Error);
-        // Return a fallback URL or empty string
-        return '';
-      }
+    // MongoDB stored image
+    if (ref.startsWith('mongo:')) {
+      return getMongoImageUrl(ref);
     }
+    // Legacy S3 refs - return empty (S3 disabled)
+    if (ref.startsWith('s3:')) {
+      console.warn('S3 storage disabled, image not available:', ref);
+      return '';
+    }
+    // Direct URL or data URL
     if (!ref.startsWith('idb:')) return ref;
     
+    // IndexedDB fallback
     const key = ref.slice(4);
     const blob = await getImageBlob(key);
     if (!blob) {
@@ -116,7 +124,6 @@ export const makeObjectUrlFromRef = async (ref: string) => {
     return URL.createObjectURL(blob);
   } catch (error) {
     console.warn('Failed to resolve image reference:', ref, error);
-    // Return empty string instead of throwing to prevent map crashes
     return '';
   }
 };

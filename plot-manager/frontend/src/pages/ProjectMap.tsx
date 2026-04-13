@@ -6,7 +6,7 @@ import { useApp } from '@/context/AppContext';
 import boundary from '@/lib/aradhanaBoundary';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { makeObjectUrlFromRef } from '@/lib/idbImageStore';
+import { makeObjectUrlFromRef, uploadImageToMongo } from '@/lib/idbImageStore';
 
 type LngLatTuple = [number, number];
 
@@ -332,42 +332,19 @@ export default function ProjectMap() {
 
     (async () => {
       try {
-        const extRaw = file.name.split('.').pop() || '';
-        const ext = extRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-        const presign = await fetch(apiUrl('/api/storage/presign-upload'), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {}),
-          },
-          body: JSON.stringify({ contentType: file.type, prefix: 'project-maps', ext }),
+        // Convert file to base64 data URL
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
         });
-        if (!presign.ok) throw new Error('Could not prepare upload');
-        const presignJson = (await presign.json()) as { key?: string; url?: string };
-        if (!presignJson?.key || !presignJson?.url) throw new Error('Could not prepare upload');
 
-        const put = await fetch(presignJson.url, {
-          method: 'PUT',
-          headers: { 'Content-Type': file.type },
-          body: file,
-        });
-        if (!put.ok) throw new Error('Upload failed');
-
-        setImageUrl(`s3:${presignJson.key}`);
+        // Upload to MongoDB
+        const result = await uploadImageToMongo(dataUrl, file.type);
+        setImageUrl(`mongo:${result.id}`);
       } catch {
-        // S3 upload failed, convert to base64 data URL instead
-        try {
-          const base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          setImageUrl(base64);
-        } catch {
-          toast.error('Image upload failed');
-        }
+        toast.error('Image upload failed');
       }
     })();
   };

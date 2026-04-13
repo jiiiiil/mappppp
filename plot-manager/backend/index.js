@@ -130,6 +130,22 @@ const ProjectSchema = new mongoose.Schema(
 
 const Project = mongoose.model('Project', ProjectSchema);
 
+// Image storage in MongoDB (no S3)
+const ImageSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    data: { type: String, required: true }, // base64 encoded image
+    contentType: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now },
+  },
+  {
+    timestamps: false,
+    strict: true,
+  }
+);
+
+const Image = mongoose.model('Image', ImageSchema);
+
 const app = express();
 
 app.use(cors());
@@ -137,57 +153,65 @@ app.use(compression());
 app.use(express.json({ limit: '25mb' }));
 
 app.get('/api/health', (_req, res) => {
-  const storageReady = Boolean(getS3());
-  res.json({ ok: true, dbReady, db: dbInfo, storageReady });
+  res.json({ ok: true, dbReady, db: dbInfo, storageReady: dbReady });
 });
 
-app.post('/api/storage/presign-upload', async (req, res) => {
+app.post('/api/images/upload', async (req, res) => {
   if (!dbReady) {
     return res.status(503).json({ message: 'Database not connected' });
   }
   return requireAdmin(req, res, async () => {
-  const s3 = getS3();
-  if (!s3 || !S3_BUCKET) {
-    return res.status(503).json({ message: 'Storage not configured' });
-  }
+    const { image, contentType } = req.body || {};
 
-  const contentType = String(req.body?.contentType || '').trim().toLowerCase();
-  const prefix = String(req.body?.prefix || 'uploads').trim().replace(/[^a-z0-9/_-]/gi, '');
-  const ext = String(req.body?.ext || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!image || typeof image !== 'string') {
+      return res.status(400).json({ message: 'Image data required' });
+    }
 
-  if (!isAllowedImageType(contentType)) {
-    return res.status(400).json({ message: 'Unsupported content type' });
-  }
+    // Validate base64 image
+    if (!image.startsWith('data:image/')) {
+      return res.status(400).json({ message: 'Invalid image format' });
+    }
 
-  const safeExt = ext || (contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg');
-  const key = `${prefix}/${Date.now()}-${randomUUID()}.${safeExt}`;
+    const id = `img-${Date.now()}-${randomUUID()}`;
+    await Image.create({ id, data: image, contentType: contentType || 'image/jpeg' });
 
-  const cmd = new PutObjectCommand({
-    Bucket: S3_BUCKET,
-    Key: key,
-    ContentType: contentType,
-  });
-
-  const url = await getSignedUrl(s3, cmd, { expiresIn: 60 });
-  res.json({ key, url });
+    res.json({ id, url: `/api/images/${id}` });
   });
 });
 
-app.get('/api/storage/signed-url', async (req, res) => {
-  const s3 = getS3();
-  if (!s3 || !S3_BUCKET) {
-    return res.status(503).json({ message: 'Storage not configured' });
+app.get('/api/images/:id', async (req, res) => {
+  if (!dbReady) {
+    return res.status(503).json({ message: 'Database not connected' });
   }
 
-  const rawKey = String(req.query?.key || '').trim();
-  const key = rawKey.startsWith('s3:') ? rawKey.slice(3) : rawKey;
-  if (!key) {
-    return res.status(400).json({ message: 'Missing key' });
+  const { id } = req.params;
+  const imageDoc = await Image.findOne({ id }).lean();
+
+  if (!imageDoc) {
+    return res.status(404).json({ message: 'Image not found' });
   }
 
-  const cmd = new GetObjectCommand({ Bucket: S3_BUCKET, Key: key });
-  const url = await getSignedUrl(s3, cmd, { expiresIn: 300 });
-  res.json({ url });
+  // If data is base64, extract and send
+  if (imageDoc.data.startsWith('data:')) {
+    const base64Data = imageDoc.data.split(',')[1];
+    const buffer = Buffer.from(base64Data, 'base64');
+    res.set('Content-Type', imageDoc.contentType);
+    res.send(buffer);
+  } else {
+    res.set('Content-Type', imageDoc.contentType);
+    res.send(Buffer.from(imageDoc.data, 'base64'));
+  }
+});
+
+app.delete('/api/images/:id', async (req, res) => {
+  if (!dbReady) {
+    return res.status(503).json({ message: 'Database not connected' });
+  }
+  return requireAdmin(req, res, async () => {
+    const { id } = req.params;
+    await Image.deleteOne({ id });
+    res.json({ ok: true });
+  });
 });
 
 app.post('/api/auth/register', (_req, res) => {
