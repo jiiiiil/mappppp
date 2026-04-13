@@ -34,6 +34,7 @@ export default function CreateProjectDialog({ onProjectCreated }: CreateProjectD
   };
 
   const uploadImageToStorage = async (file: File) => {
+    console.log('[uploadImageToStorage] Starting with file:', file.name, file.type, file.size);
     // Convert file to base64 data URL
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -41,10 +42,17 @@ export default function CreateProjectDialog({ onProjectCreated }: CreateProjectD
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+    console.log('[uploadImageToStorage] File converted to base64, length:', dataUrl.length);
 
-    // Upload to MongoDB
-    const result = await uploadImageToMongo(dataUrl, file.type);
-    return `mongo:${result.id}`;
+    try {
+      // Upload to MongoDB
+      const result = await uploadImageToMongo(dataUrl, file.type);
+      console.log('[uploadImageToStorage] Upload success:', result);
+      return `mongo:${result.id}`;
+    } catch (error) {
+      console.error('[uploadImageToStorage] Upload failed:', error);
+      throw error;
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -81,10 +89,13 @@ export default function CreateProjectDialog({ onProjectCreated }: CreateProjectD
     let storedLayoutImage = sampleLayout;
     if (layoutFile) {
       try {
+        console.log('[handleSubmit] Uploading layout file...');
         storedLayoutImage = await uploadImageToStorage(layoutFile);
-      } catch {
-        // S3 upload failed, use base64 data URL instead
-        storedLayoutImage = layoutImage;
+        console.log('[handleSubmit] Upload complete, storedLayoutImage:', storedLayoutImage);
+      } catch (error) {
+        console.error('[handleSubmit] Upload failed, using fallback:', error);
+        toast.error('Image upload failed. Using fallback layout.');
+        storedLayoutImage = layoutImage || sampleLayout;
       }
     } else if (layoutImage) {
       storedLayoutImage = layoutImage;
