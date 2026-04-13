@@ -32,16 +32,13 @@ export const uploadImageToMongo = async (dataUrl: string, contentType?: string):
   return res.json();
 };
 
-const imageUrlCache = new Map<string, string>();
-
 const getMongoImageUrl = (ref: string): string => {
   const id = ref.startsWith('mongo:') ? ref.slice(6) : ref;
-  const cached = imageUrlCache.get(id);
-  if (cached) return cached;
+  if (!id) return '';
   
-  const url = apiUrl(`/api/images/${id}`);
-  imageUrlCache.set(id, url);
-  return url;
+  // Always use fresh timestamp to prevent browser caching issues
+  const timestamp = Date.now();
+  return apiUrl(`/api/images/${id}?t=${timestamp}`);
 };
 
 const openDb = () =>

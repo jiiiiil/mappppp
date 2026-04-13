@@ -65,9 +65,9 @@ export default function ProjectCard({ project, onClick }: ProjectCardProps) {
         const next = await makeObjectUrlFromRef(raw);
         if (cancelled) return;
 
-        // If URL resolution failed (e.g., S3 error), use fallback
-        if (!next && raw.startsWith('s3:')) {
-          console.warn('S3 image failed to load for project card, using fallback');
+        // If URL resolution failed (e.g., S3 or Mongo error), use fallback
+        if (!next && (raw.startsWith('s3:') || raw.startsWith('mongo:'))) {
+          console.warn('Remote image failed to load for project card, using fallback:', raw);
           if (cancelled) return;
           setResolvedLayoutImage(sampleLayout);
           setImageLoading(false);
@@ -190,9 +190,16 @@ export default function ProjectCard({ project, onClick }: ProjectCardProps) {
               setImageLoading(false);
             }}
             onError={(e) => {
-              setImageError(true);
-              setImageLoading(false);
-              setResolvedLayoutImage(sampleLayout);
+              const currentSrc = (e.target as HTMLImageElement).src;
+              // If mongo image fails, force a reload with new timestamp
+              if (project.layoutImage?.startsWith('mongo:') && !currentSrc.includes('retry=')) {
+                const retryUrl = `${resolvedLayoutImage}&retry=${Date.now()}`;
+                setResolvedLayoutImage(retryUrl);
+              } else {
+                setImageError(true);
+                setImageLoading(false);
+                setResolvedLayoutImage(sampleLayout);
+              }
             }}
             className={`w-full h-full object-cover transform transition-all duration-500 group-hover:scale-110 ${
               imageLoading ? 'opacity-0' : 'opacity-100'

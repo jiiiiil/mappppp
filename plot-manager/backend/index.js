@@ -188,8 +188,17 @@ app.get('/api/images/:id', async (req, res) => {
   const imageDoc = await Image.findOne({ id }).lean();
 
   if (!imageDoc) {
+    // Prevent browser from caching 404 errors
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     return res.status(404).json({ message: 'Image not found' });
   }
+
+  // Prevent caching of successful image responses too
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
 
   // If data is base64, extract and send
   if (imageDoc.data.startsWith('data:')) {
