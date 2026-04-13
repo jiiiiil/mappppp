@@ -35,6 +35,9 @@ export default function ProjectCard({ project, onClick }: ProjectCardProps) {
   const [resolvedLayoutImage, setResolvedLayoutImage] = useState<string>(sampleLayout);
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
+
+  // Debug: log render values
+  console.log('[ProjectCard render] project.layoutImage:', project.layoutImage?.substring(0, 30), 'resolvedLayoutImage:', resolvedLayoutImage?.substring(0, 30));
   const objectUrlRef = useRef<string | null>(null);
   const [editForm, setEditForm] = useState({
     name: project.name,
