@@ -19,6 +19,7 @@ const getAuthHeaders = () => {
 };
 
 export const uploadImageToMongo = async (dataUrl: string, contentType?: string): Promise<{ id: string; url: string }> => {
+  console.log('[uploadImageToMongo] Starting upload, dataUrl length:', dataUrl.length);
   const res = await fetch(apiUrl('/api/images/upload'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -26,10 +27,13 @@ export const uploadImageToMongo = async (dataUrl: string, contentType?: string):
   });
 
   if (!res.ok) {
+    console.error('[uploadImageToMongo] Upload failed:', res.status);
     throw new Error(`Upload failed: ${res.status}`);
   }
 
-  return res.json();
+  const result = await res.json();
+  console.log('[uploadImageToMongo] Upload success:', result);
+  return result;
 };
 
 const getMongoImageUrl = (ref: string): string => {
@@ -99,28 +103,35 @@ export const storeDataUrlImage = async (dataUrl: string, key: string) => {
 };
 
 export const makeObjectUrlFromRef = async (ref: string) => {
+  console.log('[makeObjectUrlFromRef] Resolving ref:', ref?.substring(0, 50));
   try {
     // MongoDB stored image
     if (ref.startsWith('mongo:')) {
-      return getMongoImageUrl(ref);
+      const url = getMongoImageUrl(ref);
+      console.log('[makeObjectUrlFromRef] MongoDB URL:', url);
+      return url;
     }
     // Legacy S3 refs - return empty (S3 disabled)
     if (ref.startsWith('s3:')) {
-      console.warn('S3 storage disabled, image not available:', ref);
+      console.warn('[makeObjectUrlFromRef] S3 storage disabled, image not available:', ref);
       return '';
     }
     // Direct URL or data URL
-    if (!ref.startsWith('idb:')) return ref;
+    if (!ref.startsWith('idb:')) {
+      console.log('[makeObjectUrlFromRef] Direct URL:', ref?.substring(0, 50));
+      return ref;
+    }
     
     // IndexedDB fallback
     const key = ref.slice(4);
+    console.log('[makeObjectUrlFromRef] IndexedDB key:', key);
     const blob = await getImageBlob(key);
     if (!blob) {
       throw new Error('Image not found in IndexedDB');
     }
     return URL.createObjectURL(blob);
   } catch (error) {
-    console.warn('Failed to resolve image reference:', ref, error);
+    console.warn('[makeObjectUrlFromRef] Failed to resolve image reference:', ref, error);
     return '';
   }
 };
