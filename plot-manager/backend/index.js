@@ -34,13 +34,22 @@ const getBearerToken = (req) => {
 
 const requireAdmin = (req, res, next) => {
   const token = getBearerToken(req);
-  if (!token) return res.status(401).json({ message: 'Unauthorized' });
+  console.log('[requireAdmin] Token received:', token ? 'yes' : 'no', 'Path:', req.path);
+  if (!token) {
+    console.warn('[requireAdmin] No token provided');
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'admin') return res.status(403).json({ message: 'Forbidden' });
+    console.log('[requireAdmin] Token decoded:', { id: decoded.id, role: decoded.role });
+    if (decoded.role !== 'admin') {
+      console.warn('[requireAdmin] User is not admin:', decoded.role);
+      return res.status(403).json({ message: 'Forbidden' });
+    }
     req.auth = decoded;
     next();
-  } catch {
+  } catch (err) {
+    console.error('[requireAdmin] JWT verification failed:', err.message);
     return res.status(401).json({ message: 'Unauthorized' });
   }
 };

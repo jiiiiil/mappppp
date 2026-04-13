@@ -13,9 +13,20 @@ const apiUrl = (path: string) => {
 // MongoDB image storage helpers
 const getAuthHeaders = () => {
   const user = localStorage.getItem('realestate-user');
-  if (!user) return {};
+  console.log('[getAuthHeaders] localStorage user:', user?.substring(0, 100));
+  if (!user) {
+    console.warn('[getAuthHeaders] No user in localStorage');
+    return {};
+  }
   const parsed = JSON.parse(user);
-  return parsed?.token ? { Authorization: `Bearer ${parsed.token}` } : {};
+  console.log('[getAuthHeaders] Parsed user:', { id: parsed?.id, role: parsed?.role, hasToken: !!parsed?.token });
+  if (!parsed?.token) {
+    console.warn('[getAuthHeaders] No token in user object');
+    return {};
+  }
+  const headers = { Authorization: `Bearer ${parsed.token}` };
+  console.log('[getAuthHeaders] Returning headers:', headers);
+  return headers;
 };
 
 export const uploadImageToMongo = async (dataUrl: string, contentType?: string): Promise<{ id: string; url: string }> => {
