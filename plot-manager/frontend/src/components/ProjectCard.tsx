@@ -62,7 +62,9 @@ export default function ProjectCard({ project, onClick }: ProjectCardProps) {
         }
 
         // Try to resolve the custom image
+        console.log('[ProjectCard] Resolving image ref:', raw?.substring(0, 50));
         const next = await makeObjectUrlFromRef(raw);
+        console.log('[ProjectCard] Resolved URL:', next?.substring(0, 50));
         if (cancelled) return;
 
         // If URL resolution failed (e.g., S3 or Mongo error), use fallback
